@@ -31,33 +31,36 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 18.x
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-
-      - name: Install Python dependencies
-        run: pip install feedgen pyyaml
+          node-version: 24.x
 
       - name: Install MyST Markdown
         run: npm install -g mystmd
 
       - name: Build HTML Assets
-        # Remove BASE_URL if using a custom domain (CNAME)
-        env:
-          BASE_URL: /${{ github.event.repository.name }}
         run: myst build --html
 
-      - name: Generate RSS and Atom feeds
-        run: python generate_rss.py
-
-      - name: Inject Giscus comments into blog posts
-        run: python inject_comments.py
-
-      - name: Copy static files
+      # MyST has no production-URL setting for static builds; it writes the
+      # local build-server address into the sitemap and robots.txt.
+      - name: Set production URL in sitemap and robots.txt
         run: |
-          cp CNAME ./_build/html/ 2>/dev/null || true
+          for f in _build/html/sitemap.xml _build/html/robots.txt; do
+            if [ -f "$f" ]; then
+              sed -i -E 's#http://localhost:[0-9]+#https://zhang-soil-hydrology-lab.github.io#g' "$f"
+            else
+              echo "::warning::$f not found; skipping URL rewrite"
+            fi
+          done
+
+      - name: Verify no localhost URLs remain
+        run: |
+          status=0
+          for f in _build/html/sitemap.xml _build/html/robots.txt; do
+            if [ -f "$f" ] && grep -n 'http://localhost' "$f"; then
+              echo "::error::$f still contains a localhost URL"
+              status=1
+            fi
+          done
+          exit $status
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
